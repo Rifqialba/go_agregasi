@@ -1,0 +1,30 @@
+[
+  {
+    "id": "r001",
+    "region": "North",
+    "incidents": 45,
+    "type": "patrol",
+    "date": "2024-03-15"
+  },
+  {
+    "id": "r002",
+    "region": "South",
+    "incidents": 32,
+    "type": "patrol",
+    "date": "2024-03-15"
+  },
+  {
+    "id": "r003",
+    "region": "East",
+    "incidents": 78,
+    "type": "response",
+    "date": "2024-03-16"
+  },
+  {
+    "id": "r004",
+    "region": "West",
+    "incidents": 21,
+    "type": "standby",
+    "date": "2024-03-16"
+  }
+]
