@@ -1,0 +1,8 @@
+polling_sources:
+  - source_id: source-alpha
+    url: https://httpbin.org/anything
+    schedule: "@every 30s"
+
+  - source_id: source-beta
+    url: https://httpbin.org/status/304
+    schedule: "@every 10s"

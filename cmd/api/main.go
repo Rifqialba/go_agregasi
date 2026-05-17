@@ -5,12 +5,14 @@ import (
 	"net/http"
 	"time"
 
+	"aggregation-dashboard/internal/audit"
 	"aggregation-dashboard/internal/collector"
 	"aggregation-dashboard/internal/config"
 	"aggregation-dashboard/internal/database"
 	"aggregation-dashboard/internal/handler"
 	"aggregation-dashboard/internal/pipeline"
 	"aggregation-dashboard/internal/repository"
+	"aggregation-dashboard/internal/scheduler"
 	"aggregation-dashboard/internal/service"
 	"aggregation-dashboard/internal/utils"
 
@@ -19,8 +21,24 @@ import (
 )
 
 func main() {
-	// Load configuration
+	// Load application config
 	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Load scheduler config
+	schedulerConfig, err := scheduler.LoadConfig(
+		"config.yaml",
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Load validation schema
+	schema, err := pipeline.LoadValidationSchema(
+		"validation_schema.json",
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,6 +48,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	defer db.Close()
 
 	// Initialize repositories
@@ -39,13 +58,12 @@ func main() {
 
 	validationRepo := repository.NewValidationErrorsRepository(db)
 
-	// Load validation schema
-	schema, err := pipeline.LoadValidationSchema(
-		"validation_schema.json",
+	auditRepo := repository.NewAuditLogRepository(db)
+
+	// Initialize audit logger
+	auditLogger := audit.NewAuditLogger(
+		auditRepo,
 	)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	// Initialize pipeline components
 	validator := pipeline.NewValidator(schema)
@@ -62,7 +80,11 @@ func main() {
 
 	pipelineRunner := pipeline.NewPipelineRunner(
 		processor,
+		auditLogger,
 	)
+
+	// Initialize collector
+	restClient := collector.NewRestClient()
 
 	// Initialize services
 	webhookService := service.NewWebhookService(
@@ -73,12 +95,24 @@ func main() {
 		rawDataRepo,
 	)
 
-	restClient := collector.NewRestClient()
-
-	_ = service.NewPollingService(
+	pollingService := service.NewPollingService(
 		restClient,
 		rawDataRepo,
 	)
+
+	// Initialize scheduler
+	schedulerService := scheduler.NewScheduler(
+		pollingService,
+	)
+
+	err = schedulerService.RegisterJobs(
+		schedulerConfig,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	schedulerService.Start()
 
 	// Initialize handlers
 	webhookHandler := handler.NewWebhookHandler(
@@ -94,6 +128,19 @@ func main() {
 		pipelineRunner,
 	)
 
+	schedulerHandler := handler.NewSchedulerHandler(
+		schedulerService,
+	)
+
+	configHandler := handler.NewConfigHandler(
+		schedulerService,
+		auditLogger,
+	)
+
+	auditHandler := handler.NewAuditHandler(
+		auditRepo,
+	)
+
 	// Initialize router
 	r := chi.NewRouter()
 
@@ -102,7 +149,10 @@ func main() {
 	r.Use(middleware.Recoverer)
 
 	// Health check endpoint
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+	r.Get("/health", func(
+		w http.ResponseWriter,
+		r *http.Request,
+	) {
 		utils.JSON(
 			w,
 			http.StatusOK,
@@ -112,13 +162,19 @@ func main() {
 		)
 	})
 
-	// Webhook endpoint
+	// Audit log endpoints
+	r.Get(
+		"/audit-log",
+		auditHandler.GetAuditLogs,
+	)
+
+	// Webhook endpoints
 	r.Post(
 		"/webhooks/{source_id}",
 		webhookHandler.HandleWebhook,
 	)
 
-	// File upload endpoint
+	// Upload endpoints
 	r.Post(
 		"/upload",
 		uploadHandler.HandleUpload,
@@ -135,6 +191,18 @@ func main() {
 		pipelineHandler.GetStatus,
 	)
 
+	// Scheduler endpoints
+	r.Get(
+		"/scheduler/status",
+		schedulerHandler.GetStatus,
+	)
+
+	// Config endpoints
+	r.Post(
+		"/config/reload",
+		configHandler.ReloadConfig,
+	)
+
 	// HTTP server configuration
 	server := &http.Server{
 		Addr:              ":" + cfg.AppPort,
@@ -145,7 +213,10 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("server running on port %s", cfg.AppPort)
+	log.Printf(
+		"server running on port %s",
+		cfg.AppPort,
+	)
 
 	err = server.ListenAndServe()
 	if err != nil {

@@ -8,4 +8,8 @@ const (
 	StatusProcessed = "PROCESSED"
 	StatusInvalid   = "INVALID"
 	StatusPending = "PENDING"
+	AuditActionPipelineRun  = "PIPELINE_RUN"
+	AuditActionWebhook      = "WEBHOOK_RECEIVED"
+	AuditActionUpload       = "FILE_UPLOAD"
+	AuditActionConfigReload = "CONFIG_RELOAD"
 )

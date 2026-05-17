@@ -5,6 +5,9 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"aggregation-dashboard/internal/audit"
+	"aggregation-dashboard/internal/models"
 )
 
 type PipelineStatus struct {
@@ -15,7 +18,8 @@ type PipelineStatus struct {
 }
 
 type PipelineRunner struct {
-	processor *Processor
+	processor   *Processor
+	auditLogger *audit.AuditLogger
 
 	mu        sync.RWMutex
 	status    PipelineStatus
@@ -24,9 +28,11 @@ type PipelineRunner struct {
 
 func NewPipelineRunner(
 	processor *Processor,
+	auditLogger *audit.AuditLogger,
 ) *PipelineRunner {
 	return &PipelineRunner{
-		processor: processor,
+		processor:   processor,
+		auditLogger: auditLogger,
 		status: PipelineStatus{
 			Status: "idle",
 		},
@@ -89,6 +95,16 @@ func (r *PipelineRunner) runAsync() {
 		s.RecordsProcessed = processed
 		s.Errors = errorsCount
 	})
+
+	r.auditLogger.Log(
+		context.Background(),
+		models.AuditActionPipelineRun,
+		"",
+		map[string]any{
+			"records_processed": processed,
+			"errors":            errorsCount,
+		},
+	)
 
 	log.Println("pipeline completed")
 }
