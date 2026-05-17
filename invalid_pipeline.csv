@@ -1,0 +1,4 @@
+id,name,value,date
+1,Alpha,100,2024-03-15
+2,Beta,200,invalid-date
+3,Gamma,300,2024-03-17

@@ -87,3 +87,67 @@ func (r *RawDataRepository) InsertBatch(
 
 	return nil
 }
+func (r *RawDataRepository) GetPending(
+	ctx context.Context,
+) ([]models.RawData, error) {
+	query := `
+		SELECT
+			id,
+			source_id,
+			source_type,
+			raw_payload,
+			status,
+			idempotency_key
+		FROM raw_data
+		WHERE status = 'PENDING'
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []models.RawData
+
+	for rows.Next() {
+		var data models.RawData
+
+		err := rows.Scan(
+			&data.ID,
+			&data.SourceID,
+			&data.SourceType,
+			&data.RawPayload,
+			&data.Status,
+			&data.IdempotencyKey,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		result = append(result, data)
+	}
+
+	return result, nil
+}
+func (r *RawDataRepository) UpdateStatus(
+	ctx context.Context,
+	id string,
+	status string,
+) error {
+	query := `
+		UPDATE raw_data
+		SET status = $1
+		WHERE id = $2
+	`
+
+	_, err := r.db.Exec(
+		ctx,
+		query,
+		status,
+		id,
+	)
+
+	return err
+}

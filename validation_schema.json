@@ -1,0 +1,14 @@
+{
+  "required_fields": [
+    "id",
+    "name",
+    "value",
+    "date"
+  ],
+  "field_types": {
+    "id": "string",
+    "name": "string",
+    "value": "number",
+    "date": "date:2026-01-02"
+  }
+}

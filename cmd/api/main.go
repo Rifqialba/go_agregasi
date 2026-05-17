@@ -9,9 +9,11 @@ import (
 	"aggregation-dashboard/internal/config"
 	"aggregation-dashboard/internal/database"
 	"aggregation-dashboard/internal/handler"
+	"aggregation-dashboard/internal/pipeline"
 	"aggregation-dashboard/internal/repository"
 	"aggregation-dashboard/internal/service"
 	"aggregation-dashboard/internal/utils"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -33,10 +35,43 @@ func main() {
 	// Initialize repositories
 	rawDataRepo := repository.NewRawDataRepository(db)
 
-	// Initialize services
-	webhookService := service.NewWebhookService(rawDataRepo)
+	processedRepo := repository.NewProcessedDataRepository(db)
 
-	uploadService := service.NewUploadService(rawDataRepo)
+	validationRepo := repository.NewValidationErrorsRepository(db)
+
+	// Load validation schema
+	schema, err := pipeline.LoadValidationSchema(
+		"validation_schema.json",
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Initialize pipeline components
+	validator := pipeline.NewValidator(schema)
+
+	normalizer := pipeline.NewNormalizer()
+
+	processor := pipeline.NewProcessor(
+		rawDataRepo,
+		processedRepo,
+		validationRepo,
+		validator,
+		normalizer,
+	)
+
+	pipelineRunner := pipeline.NewPipelineRunner(
+		processor,
+	)
+
+	// Initialize services
+	webhookService := service.NewWebhookService(
+		rawDataRepo,
+	)
+
+	uploadService := service.NewUploadService(
+		rawDataRepo,
+	)
 
 	restClient := collector.NewRestClient()
 
@@ -55,6 +90,10 @@ func main() {
 		uploadService,
 	)
 
+	pipelineHandler := handler.NewPipelineHandler(
+		pipelineRunner,
+	)
+
 	// Initialize router
 	r := chi.NewRouter()
 
@@ -64,10 +103,13 @@ func main() {
 
 	// Health check endpoint
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		utils.JSON(w, http.StatusOK, map[string]string{
-	"status": "ok",
-})
+		utils.JSON(
+			w,
+			http.StatusOK,
+			map[string]string{
+				"status": "ok",
+			},
+		)
 	})
 
 	// Webhook endpoint
@@ -80,6 +122,17 @@ func main() {
 	r.Post(
 		"/upload",
 		uploadHandler.HandleUpload,
+	)
+
+	// Pipeline endpoints
+	r.Post(
+		"/pipeline/run",
+		pipelineHandler.RunPipeline,
+	)
+
+	r.Get(
+		"/pipeline/status",
+		pipelineHandler.GetStatus,
 	)
 
 	// HTTP server configuration
